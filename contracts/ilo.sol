@@ -1,123 +1,187 @@
 pragma solidity ^0.7.0;
 
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts/math/SafeMath.sol';
-import './Token.sol';
+/**
+ * @title SafeMath
+ * @dev Math operations with safety checks that throw on error
+ */
+library SafeMath {
+    /**
+     * mul 
+     * @dev Safe math multiply function
+     */
+  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+    uint256 c = a * b;
+    assert(a == 0 || c / a == b);
+    return c;
+  }
+  /**
+   * add
+   * @dev Safe math addition function
+   */
+  function add(uint256 a, uint256 b) internal pure returns (uint256) {
+    uint256 c = a + b;
+    assert(c >= a);
+    return c;
+  }
+}
 
-contract ICO {
-    using SafeMath for uint;
-    struct Sale {
-        address investor;
-        uint amount;
-        bool tokensWithdrawn;
-    }
-    mapping(address => Sale) public sales;
-    address public admin;
-    uint public end;
-    uint public duration;
-    uint public price;
-    uint public availableTokens;
-    uint public minPurchase;
-    uint public maxPurchase;
-    Token public token;
-    IERC20 public dai = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    
-    constructor(
-        address tokenAddress,
-        uint _duration,
-        uint _price,
-        uint _availableTokens,
-        uint _minPurchase,
-        uint _maxPurchase) {
-        token = Token(tokenAddress);
-        
-        require(_duration > 0, 'duration should be > 0');
-        require(
-          _availableTokens > 0 && _availableTokens <= token.maxTotalSupply(), 
-          '_availableTokens should be > 0 and <= maxTotalSupply'
-        );
-        require(_minPurchase > 0, '_minPurchase should > 0');
-        require(
-          _maxPurchase > 0 && _maxPurchase <= _availableTokens, 
-          '_maxPurchase should be > 0 and <= _availableTokens'
-        );
+/**
+ * @title Ownable
+ * @dev Ownable has an owner address to simplify "user permissions".
+ */
+contract Ownable {
+  address public owner;
 
-        admin = msg.sender;
-        duration = _duration;
-        price = _price;
-        availableTokens = _availableTokens;
-        minPurchase = _minPurchase;
-        maxPurchase = _maxPurchase;
-    }
+  /**
+   * Ownable
+   * @dev Ownable constructor sets the `owner` of the contract to sender
+   */
+  function Ownable() public {
+    owner = msg.sender;
+  }
+
+  /**
+   * ownerOnly
+   * @dev Throws an error if called by any account other than the owner.
+   */
+  modifier onlyOwner() {
+    require(msg.sender == owner);
+    _;
+  }
+
+  /**
+   * transferOwnership
+   * @dev Allows the current owner to transfer control of the contract to a newOwner.
+   * @param newOwner The address to transfer ownership to.
+   */
+  function transferOwnership(address newOwner) public onlyOwner {
+    require(newOwner != address(0));
+    owner = newOwner;
+  }
+}
+
+/**
+ * @title Token
+ * @dev API interface for interacting with the WILD Token contract 
+ */
+interface Token {
+  function transfer(address _to, uint256 _value) external returns (bool);
+  function balanceOf(address _owner) external constant returns (uint256 balance);
+}
+
+/**
+ * @title LavevelICO
+ * @dev LavevelICO contract is Ownable
+ **/
+contract LavevelICO is Ownable {
+  using SafeMath for uint256;
+  Token token;
+
+  uint256 public constant RATE = 3000; // Number of tokens per Ether
+  uint256 public constant CAP = 5350; // Cap in Ether
+  uint256 public constant START = 1519862400; // Mar 26, 2018 @ 12:00 EST
+  uint256 public constant DAYS = 45; // 45 Day
+  
+  uint256 public constant initialTokens = 6000000 * 10**18; // Initial number of tokens available
+  bool public initialized = false;
+  uint256 public raisedAmount = 0;
+  
+  /**
+   * BoughtTokens
+   * @dev Log tokens bought onto the blockchain
+   */
+  event BoughtTokens(address indexed to, uint256 value);
+
+  /**
+   * whenSaleIsActive
+   * @dev ensures that the contract is still active
+   **/
+  modifier whenSaleIsActive() {
+    // Check if sale is active
+    assert(isActive());
+    _;
+  }
+  
+  /**
+   * LavevelICO
+   * @dev LavevelICO constructor
+   **/
+  function LavevelICO(address _tokenAddr) public {
+      require(_tokenAddr != 0);
+      token = Token(_tokenAddr);
+  }
+  
+  /**
+   * initialize
+   * @dev Initialize the contract
+   **/
+  function initialize() public onlyOwner {
+      require(initialized == false); // Can only be initialized once
+      require(tokensAvailable() == initialTokens); // Must have enough tokens allocated
+      initialized = true;
+  }
+
+  /**
+   * isActive
+   * @dev Determins if the contract is still active
+   **/
+  function isActive() public view returns (bool) {
+    return (
+        initialized == true &&
+        now >= START && // Must be after the START date
+        now <= START.add(DAYS * 1 days) && // Must be before the end date
+        goalReached() == false // Goal must not already be reached
+    );
+  }
+
+  /**
+   * goalReached
+   * @dev Function to determin is goal has been reached
+   **/
+  function goalReached() public view returns (bool) {
+    return (raisedAmount >= CAP * 1 ether);
+  }
+
+  /**
+   * @dev Fallback function if ether is sent to address insted of buyTokens function
+   **/
+  function () public payable {
+    buyTokens();
+  }
+
+  /**
+   * buyTokens
+   * @dev function that sells available tokens
+   **/
+  function buyTokens() public payable whenSaleIsActive {
+    uint256 weiAmount = msg.value; // Calculate tokens to sell
+    uint256 tokens = weiAmount.mul(RATE);
     
-    function start()
-        external
-        onlyAdmin() 
-        icoNotActive() {
-        end = block.timestamp + duration;
-    }
+    emit BoughtTokens(msg.sender, tokens); // log event onto the blockchain
+    raisedAmount = raisedAmount.add(msg.value); // Increment raised amount
+    token.transfer(msg.sender, tokens); // Send tokens to buyer
     
-    function buy(uint daiAmount)
-        external
-        icoActive() {
-        require(
-          daiAmount >= minPurchase && daiAmount <= maxPurchase, 
-          'have to buy between minPurchase and maxPurchase'
-        );
-        uint tokenAmount = daiAmount.div(price);
-        require(
-          tokenAmount <= availableTokens, 
-          'Not enough tokens left for sale'
-        );
-        dai.transferFrom(msg.sender, address(this), daiAmount);
-        token.mint(address(this), tokenAmount);
-        sales[msg.sender] = Sale(
-            msg.sender,
-            tokenAmount,
-            false
-        );
-    }
-    
-    function withdrawTokens()
-        external
-        icoEnded() {
-        Sale storage sale = sales[msg.sender];
-        require(sale.amount > 0, 'only investors');
-        require(sale.tokensWithdrawn == false, 'tokens were already withdrawn');
-        sale.tokensWithdrawn = true;
-        token.transfer(sale.investor, sale.amount);
-    }
-    
-    function withdrawDai(uint amount)
-        external
-        onlyAdmin()
-        icoEnded() {
-        dai.transfer(admin, amount);
-    }
-    
-    modifier icoActive() {
-        require(
-          end > 0 && block.timestamp < end && availableTokens > 0, 
-          'ICO must be active'
-        );
-        _;
-    }
-    
-    modifier icoNotActive() {
-        require(end == 0, 'ICO should not be active');
-        _;
-    }
-    
-    modifier icoEnded() {
-        require(
-          end > 0 && (block.timestamp >= end || availableTokens == 0), 
-          'ICO must have ended'
-        );
-        _;
-    }
-    
-    modifier onlyAdmin() {
-        require(msg.sender == admin, 'only admin');
-        _;
-    }
+    owner.transfer(msg.value);// Send money to owner
+  }
+
+  /**
+   * tokensAvailable
+   * @dev returns the number of tokens allocated to this contract
+   **/
+  function tokensAvailable() public constant returns (uint256) {
+    return token.balanceOf(this);
+  }
+
+  /**
+   * destroy
+   * @notice Terminate contract and refund to owner
+   **/
+  function destroy() onlyOwner public {
+    // Transfer tokens back to owner
+    uint256 balance = token.balanceOf(this);
+    assert(balance > 0);
+    token.transfer(owner, balance);
+    // There should be no ether in the contract but just in case
+    selfdestruct(owner);
+  }
 }
