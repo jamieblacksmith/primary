@@ -1,12 +1,12 @@
-const SimpleToken = artifacts.require("SimpleToken");
-const SimpleCrowdsale = artifacts.require("SimpleCrowdsale");
+const Token = artifacts.require("Token");
+const ILO = artifacts.require("ILO");
 
 module.exports = async function (deployer, network, accounts) {
-  await deployer.deploy(SimpleToken, 'Simple Token', 'SIM', '10000000000000000000000');
-  const token = await SimpleToken.deployed();
+  await deployer.deploy(Token, 'Notify', 'NTF', '1000000000000000000000000');
+  const token = await Token.deployed();
   
-  await deployer.deploy(SimpleCrowdsale, 1, accounts[0], token.address);
-  const crowdsale = await SimpleCrowdsale.deployed();
+  await deployer.deploy(ILO, 1, accounts[0], token.address);
+  const crowdsale = await ILO.deployed();
 
   token.transfer(crowdsale.address, await token.totalSupply())
 };
