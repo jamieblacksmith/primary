@@ -2,7 +2,7 @@ pragma solidity ^0.5.5;
 
 import "@openzeppelin/contracts/crowdsale/Crowdsale.sol";
 
-contract SimpleCrowdsale is Crowdsale {
+contract ILO is Crowdsale {
     constructor(
         uint256 rate,
         address payable wallet,
